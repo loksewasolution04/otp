@@ -2,7 +2,7 @@
   "name": "loksewa-otp-server",
   "version": "1.0.0",
   "dependencies": {
-    "nodemailer": "^6.9.1"
+    "nodemailer": "^6.9.1",
     "firebase-admin": "^11.5.0"
   }
 }

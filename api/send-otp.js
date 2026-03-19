@@ -1,53 +1,51 @@
 const nodemailer = require('nodemailer');
+const admin = require('firebase-admin');
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  });
+}
 
 export default async function handler(req, res) {
-  // CORS configuration (App bata call garna allow garne)
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // CORS configuration same as before...
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  
+  const { action, email, otp, uid, newEmail } = req.body;
+
+  // LOGIC 1: OTP PATHAUNE (Aghi ko jastai)
+  if (action === 'send-otp') {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS },
+    });
+
+    try {
+      await transporter.sendMail({
+        from: `"Loksewa Solution" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject: `Code: ${otp}`,
+        html: `<h2>Verification Code: ${otp}</h2>`,
+      });
+      return res.status(200).json({ success: true });
+    } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method Not Allowed' });
-  }
-
-  const { email, otp } = req.body;
-
-  // 1. Setup Gmail Transporter
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_PASS, 
-    },
-  });
-
-  const mailOptions = {
-    from: `"Loksewa Solution" <${process.env.GMAIL_USER}>`,
-    to: email,
-    subject: `Verification Code: ${otp}`,
-    html: `
-      <div style="font-family: sans-serif; text-align: center; padding: 20px;">
-        <h2 style="color: #0a47c2;">Verify Your Identity</h2>
-        <p>Your 6-digit verification code to change your email is:</p>
-        <h1 style="font-size: 40px; letter-spacing: 5px; color: #333;">${otp}</h1>
-        <p style="color: #94a3b8;">This code is valid for 5 minutes only.</p>
-      </div>
-    `,
-  };
-
-  try {
-    // 2. Send the Email
-    await transporter.sendMail(mailOptions);
-    
-    // Success Response
-    return res.status(200).json({ success: true, message: 'OTP Sent Successfully' });
-  } catch (error) {
-    console.error("Mailer Error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+  // LOGIC 2: ADMIN BYPASS EMAIL CHANGE (Security fix)
+  if (action === 'update-email') {
+    try {
+      await admin.auth().updateUser(uid, { email: newEmail });
+      return res.status(200).json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
   }
 }
